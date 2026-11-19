@@ -1,0 +1,11 @@
+# Example experiment config: same as base.yaml, only the learning rate changes.
+# Copy this pattern for every experiment: `extends` the reference config and
+# override only the keys under study.
+
+extends: base.yaml
+
+experiment:
+  name: example_lr_1e-4
+
+train:
+  learning_rate: 0.0001

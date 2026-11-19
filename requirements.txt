@@ -1,0 +1,11 @@
+# Pinned to match the Google Colab runtime 2026.10 (Python 3.13).
+# Update a pin only after checking `!pip list` on Colab, and note why in the PR.
+tensorflow==2.21.0
+keras==3.12.0
+numpy==2.1.3
+pandas==2.2.3
+scikit-learn==1.6.1
+matplotlib==3.10.0
+pillow==11.1.0
+pyyaml==6.0.2
+pytest==8.3.4

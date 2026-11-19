@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Data: never commit the dataset (see data/README.md)
+data/raw/
+data/processed/
+*.zip
+
+# Training artefacts (only the FINAL model goes into models/, see models/README.md)
+experiments/checkpoints/
+experiments/tensorboard/
+wandb/
+
+# Secrets and OS / editor files
+kaggle.json
+.DS_Store
+.idea/
+.vscode/

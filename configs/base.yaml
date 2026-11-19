@@ -1,0 +1,41 @@
+# Reference configuration.
+#
+# Every experiment config extends this file and changes ONE factor
+# (one-factor-at-a-time tuning, spec section 3.5). All paths are relative
+# to the repository root. Values marked "placeholder" are first guesses
+# for the owner of that part to replace.
+
+experiment:
+  name: base
+  seed: 42
+
+data:
+  raw_dir: data/raw
+  processed_dir: data/processed
+  metadata_file: HAM10000_metadata.csv
+  image_size: [224, 224]          # placeholder (Model Architect / Data Engineer)
+  classes: [akiec, bcc, bkl, df, mel, nv, vasc]
+  split:
+    train: 0.70
+    val: 0.15
+    test: 0.15
+    group_by: lesion_id           # all images of one lesion stay in one split
+    stratify_by: dx
+  class_weights: true             # placeholder (Data Engineer)
+  augmentation: true              # placeholder (Data Engineer)
+
+model:
+  name: custom_cnn                # majority | logreg | custom_cnn | resnet50_frozen | resnet50_finetune
+  dropout: 0.3                    # placeholder (Model Architect)
+
+train:
+  optimizer: adam                 # sgd | sgd_momentum | adam
+  learning_rate: 0.001
+  momentum: 0.9                   # only used by sgd_momentum
+  batch_size: 32
+  epochs: 30
+  early_stopping_patience: 5      # early stopping on validation loss
+
+paths:
+  experiments_dir: experiments
+  models_dir: models
