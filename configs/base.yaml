@@ -13,16 +13,17 @@ data:
   raw_dir: data/raw
   processed_dir: data/processed
   metadata_file: HAM10000_metadata.csv
-  image_size: [224, 224]          # placeholder (Model Architect / Data Engineer)
+  image_size: [224, 224]          # [height, width], shared by training and inference
   classes: [akiec, bcc, bkl, df, mel, nv, vasc]
   split:
+    seed: 42
     train: 0.70
     val: 0.15
     test: 0.15
     group_by: lesion_id           # all images of one lesion stay in one split
     stratify_by: dx
-  class_weights: true             # placeholder (Data Engineer)
-  augmentation: true              # placeholder (Data Engineer)
+  class_weights: true             # training only
+  augmentation: true              # training only
 
 model:
   name: custom_cnn                # majority | logreg | custom_cnn | resnet50_frozen | resnet50_finetune
