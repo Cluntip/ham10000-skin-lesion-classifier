@@ -1,8 +1,9 @@
 """Inference on a raw image file.
 
 Loads the saved model and its inference config from ``models/`` and applies
-exactly the same preprocessing as training (``src.data.preprocess_image``),
-so training and inference can never drift apart.
+exactly the same image reading and preprocessing as training
+(``src.data.load_image`` / ``src.data.preprocess_image``), so training and
+inference can never drift apart.
 
 Artefacts in ``models/`` (written by :func:`save_artifacts`):
 
@@ -128,48 +129,22 @@ def compiled_forward(model_dir: str | Path | None = None):
 # ---------------------------------------------------------------------------
 
 
-def read_image(image_path: str | Path):
-    """Read a JPEG or PNG file into a ``uint8`` RGB tensor of shape ``(h, w, 3)``.
+def _predict_preprocessed(x, config: dict, model_dir, start: float) -> dict:
+    """Run the compiled model on one preprocessed image and format the result.
 
     Args:
-        image_path: Path to the image.
+        x: ``float32`` tensor of shape ``(*data.image_size, 3)``.
+        config: The inference config.
+        model_dir: Folder with the artefacts.
+        start: ``time.perf_counter()`` value when the request started.
 
     Returns:
-        The decoded image tensor.
+        See :func:`predict_array`.
     """
     import tensorflow as tf
 
-    raw = tf.io.read_file(str(image_path))
-    return tf.io.decode_image(raw, channels=3, expand_animations=False)
-
-
-def predict_array(image, model_dir: str | Path | None = None) -> dict:
-    """Predict the lesion class of one decoded RGB image.
-
-    Used by :func:`predict_image` and by the demo app (Gradio passes a NumPy
-    array). The image goes through ``src.data.preprocess_image``, the same
-    function used in training.
-
-    Args:
-        image: ``uint8`` array or tensor of shape ``(h, w, 3)``.
-        model_dir: Folder with the artefacts (default ``models/``).
-
-    Returns:
-        ``{"label", "confidence", "probabilities", "malignant_probability",
-        "inference_ms"}``; ``probabilities`` maps every class to its
-        probability, sorted from most to least likely.
-    """
-    import tensorflow as tf
-
-    from src.data import preprocess_image
-
-    _, config = load_artifacts(model_dir)
-    forward = compiled_forward(model_dir)
     class_names = config["data"]["classes"]
-
-    start = time.perf_counter()
-    x = preprocess_image(tf.convert_to_tensor(image, dtype=tf.uint8), config)
-    probs = forward(tf.expand_dims(tf.cast(x, tf.float32), 0)).numpy()[0]
+    probs = compiled_forward(model_dir)(tf.expand_dims(tf.cast(x, tf.float32), 0)).numpy()[0]
     elapsed_ms = (time.perf_counter() - start) * 1000
 
     order = np.argsort(-probs)
@@ -183,8 +158,36 @@ def predict_array(image, model_dir: str | Path | None = None) -> dict:
     }
 
 
+def predict_array(image, model_dir: str | Path | None = None) -> dict:
+    """Predict the lesion class of one decoded RGB image.
+
+    Used by the demo app (Gradio passes a NumPy array). The image goes
+    through ``src.data.preprocess_image``, the same function used in training.
+
+    Args:
+        image: ``uint8`` array or tensor of shape ``(h, w, 3)``.
+        model_dir: Folder with the artefacts (default ``models/``).
+
+    Returns:
+        ``{"label", "confidence", "probabilities", "malignant_probability",
+        "inference_ms"}``; ``probabilities`` maps every class to its
+        probability, sorted from most to least likely.
+    """
+    import tensorflow as tf
+
+    from src import data
+
+    _, config = load_artifacts(model_dir)
+    start = time.perf_counter()
+    x = data.preprocess_image(tf.convert_to_tensor(image, dtype=tf.uint8), config)
+    return _predict_preprocessed(x, config, model_dir, start)
+
+
 def predict_image(image_path: str | Path, model_dir: str | Path | None = None) -> dict:
-    """Predict the lesion class of one image.
+    """Predict the lesion class of one image file.
+
+    The file is read with ``src.data.load_image``, the exact function the
+    training pipeline uses (same decoder, same preprocessing).
 
     Args:
         image_path: Path to a JPEG or PNG dermatoscopic image.
@@ -194,7 +197,12 @@ def predict_image(image_path: str | Path, model_dir: str | Path | None = None) -
         ``{"label": str, "confidence": float, "probabilities": {class: prob},
         "malignant_probability": float, "inference_ms": float}``.
     """
-    return predict_array(read_image(image_path), model_dir)
+    from src import data
+
+    _, config = load_artifacts(model_dir)
+    start = time.perf_counter()
+    x = data.load_image(str(image_path), config)
+    return _predict_preprocessed(x, config, model_dir, start)
 
 
 # ---------------------------------------------------------------------------
