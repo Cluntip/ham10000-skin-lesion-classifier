@@ -21,6 +21,16 @@ def test_extends_overrides_only_changed_keys():
     assert "extends" not in child
 
 
+def test_experiment_seed_override_preserves_resolved_split():
+    base = load_config("configs/base.yaml")
+    assert base["data"]["split"]["seed"] == 42
+
+    for path in ("configs/base.yaml", "configs/example_lr_1e-4.yaml"):
+        config = load_config(path, ["experiment.seed=7"])
+        assert config["experiment"]["seed"] == 7
+        assert config["data"]["split"] == base["data"]["split"]
+
+
 def test_command_line_overrides_are_typed():
     config = apply_overrides({"train": {"batch_size": 32}}, ["train.batch_size=64", "data.image_size=[128, 128]"])
     assert config["train"]["batch_size"] == 64
