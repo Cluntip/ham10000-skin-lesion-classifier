@@ -25,9 +25,9 @@ All of these come from `src.evaluate.compute_metrics`.
 
 | With | What I need |
 |---|---|
-| Ghada (data) | `make_datasets(config)["val"/"test"]` must **not be shuffled**, and its order must equal the row order of `split_by_lesion(...)["val"/"test"]`. `evaluate.py` checks this and stops if the order differs. Training and inference both use `preprocess_image(image, config)`. For decoding, `src.predict.read_image` uses `tf.io.decode_image(channels=3)`, so `data.py` should decode the same way. |
+| Ghada (data) | `make_datasets(config)["val"/"test"]` is **not shuffled** (✅ in her pipeline). `evaluate.py` takes its metadata from the same cleaned splits (`data._prepared_splits`) and stops if the label order differs. Training and inference share `data.load_image` / `data.preprocess_image`; `predict.py` calls them directly. |
 | Ammar / Marwan (models, training) | Models output a **softmax over the 7 classes in `data.classes` order**. Save the final model with `src.predict.save_artifacts(model, config)`. |
-| Ammar (baselines) | Baselines only need to produce `y_prob` of shape `(n, 7)`. Then `evaluate_predictions(y_true, y_prob, classes, out_dir, name=...)` produces the same metrics and plots as for the neural models. For the majority baseline, `y_prob` is a one-hot vector on `nv` for every sample. |
+| Ammar (baselines) | The learned baseline saves its validation probabilities as a `.npy` array of shape `(n_val, 7)` in the row order of the validation split. `python -m src.evaluate --config configs/base.yaml --probs <file>.npy --name logreg_baseline` then produces the same metrics and plots as for the neural models. The majority baseline is built into `evaluate.py` (`--baseline majority`): it uses the training-set class frequencies for every image. |
 | Amr (experiments) | `metrics.json` from each evaluation can be added to the experiment log. |
 
 ## 4. Error analysis protocol
@@ -70,7 +70,7 @@ All of these come from `src.evaluate.compute_metrics`.
 | Checkpoint | My deliverable |
 |---|---|
 | 1 (Week 9) ✅ | This plan; `evaluate.py` (all metrics, plots, error tables) with unit tests; `predict.py` (save/load, prediction, benchmark, warm-up); the Gradio demo; the artefact contract. Everything tested on a Colab T4: all tests pass, and the demo launched with a dummy model. |
-| 2 (Week 10) | Evaluate both baselines on the validation set, as soon as Ghada's splits exist. |
+| 2 (Week 10) | `evaluate.py` connected to Ghada's pipeline. Majority baseline measured on the validation set; logistic-regression baseline measured as soon as Ammar's probabilities exist. Comparison table in `experiments/eval/summary_val.csv`. |
 | 3 (Week 12) | Confusion matrix, ROC and failure cases for Models A, B and C on the validation set. Demo running with a temporary model. |
 | 4 (Week 13) | One test-set run for the final model and the baselines; error analysis filled in; benchmark numbers; report sections 6 and 7 drafted. |
 | Week 14 | Live demo, including a failure case. |
