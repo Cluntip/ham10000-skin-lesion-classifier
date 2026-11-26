@@ -1,0 +1,3 @@
+# Extra packages for the demo only (install on top of ../requirements.txt).
+# Kept separate so the training environment on Colab stays minimal.
+gradio==6.32.0
