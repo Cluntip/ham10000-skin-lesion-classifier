@@ -12,8 +12,10 @@ from src.evaluate import (
     error_rate_by,
     evaluate_predictions,
     find_worst_errors,
+    majority_baseline_probs,
     malignant_recall,
     most_common_confusions,
+    summarize_evaluations,
 )
 
 CLASSES = ["akiec", "bcc", "bkl", "df", "mel", "nv", "vasc"]
@@ -103,3 +105,50 @@ def test_evaluate_predictions_writes_all_files(tmp_path):
     evaluate_predictions(y, probs, CLASSES, tmp_path, name="random")
     for name in ("metrics.json", "confusion_matrix.png", "roc_curves.png", "top_confusions.csv", "worst_errors.csv"):
         assert (tmp_path / name).exists(), name
+
+
+def test_majority_baseline_predicts_majority_with_chance_auc():
+    train = np.array([5] * 8 + [4] * 2)
+    probs = majority_baseline_probs(train, n_samples=4, n_classes=7)
+    assert probs.shape == (4, 7)
+    assert np.allclose(probs.sum(axis=1), 1)
+    m = compute_metrics(np.array([5, 4, 5, 1]), probs, CLASSES)
+    assert m["melanoma_recall"] == 0.0
+    assert m["per_class"]["nv"]["auc"] == 0.5
+
+
+def test_summarize_evaluations_sorts_by_macro_f1(tmp_path):
+    y = np.repeat(np.arange(7), 3)
+    evaluate_predictions(y, one_hot_probs(y), CLASSES, tmp_path / "good_val", name="good")
+    evaluate_predictions(y, one_hot_probs(np.full(21, 5)), CLASSES, tmp_path / "majority_val", name="majority")
+    evaluate_predictions(y, one_hot_probs(y), CLASSES, tmp_path / "final_test", name="final")
+    table = summarize_evaluations(tmp_path, "val")
+    assert table["model"].tolist() == ["good", "majority"]
+
+
+def test_cli_majority_baseline_end_to_end(tmp_path):
+    """Fake HAM10000 folder -> Ghada's splits -> majority baseline evaluation (no TensorFlow)."""
+    from PIL import Image
+
+    from src.evaluate import main
+
+    raw = tmp_path / "raw"
+    (raw / "images").mkdir(parents=True)
+    rows = []
+    for c, dx in enumerate(CLASSES):
+        n_lesions = 20 if dx == "nv" else 6
+        for k in range(n_lesions):
+            image_id = f"ISIC_{c}{k:03d}"
+            Image.new("RGB", (8, 6)).save(raw / "images" / f"{image_id}.jpg")
+            rows.append({"lesion_id": f"HAM_{c}{k:03d}", "image_id": image_id, "dx": dx, "dx_type": "histo"})
+    pd.DataFrame(rows).to_csv(raw / "HAM10000_metadata.csv", index=False)
+
+    main([
+        "--config", "configs/base.yaml", "--baseline", "majority",
+        "--set", f"data.raw_dir={raw.as_posix()}", f"paths.experiments_dir={(tmp_path / 'exp').as_posix()}",
+    ])
+    out = tmp_path / "exp" / "eval" / "majority_baseline_val"
+    metrics = json.loads((out / "metrics.json").read_text())
+    assert metrics["per_class"]["nv"]["recall"] == 1.0
+    assert metrics["melanoma_recall"] == 0.0
+    assert (tmp_path / "exp" / "eval" / "summary_val.csv").exists()

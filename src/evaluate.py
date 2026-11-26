@@ -14,8 +14,11 @@ Two ways to use it:
 
 * From the command line, with a saved Keras model::
 
-      python -m src.evaluate --config configs/base.yaml --model path/to/model.keras            # validation split
-      python -m src.evaluate --config configs/final.yaml --split test                         # final model, test split
+      python -m src.evaluate --config configs/base.yaml --baseline majority            # trivial baseline, validation split
+      python -m src.evaluate --config configs/base.yaml --probs experiments/logreg_val.npy  # any saved probabilities
+      python -m src.evaluate --config configs/base.yaml --model path/to/model.keras        # a saved Keras model
+      python -m src.evaluate --config configs/base.yaml --summary                          # comparison table only
+      python -m src.evaluate --config configs/final.yaml --split test                      # final model, test split (once)
 
 The **validation** split is the default. The test split must be asked for
 explicitly with ``--split test`` and is used once, at the end, for the final
@@ -492,6 +495,65 @@ def format_summary(metrics: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Baselines and comparison table
+# ---------------------------------------------------------------------------
+
+
+def majority_baseline_probs(train_labels: np.ndarray, n_samples: int, n_classes: int) -> np.ndarray:
+    """Probabilities of the trivial baseline: the training-set class frequencies.
+
+    Every sample gets the same vector, so the predicted class is always the
+    majority class (``nv``) and every ROC AUC is exactly 0.5. Using the class
+    *frequencies* (instead of a one-hot vector) keeps the probabilities
+    honest: this is the best a model can do without looking at the image.
+
+    Args:
+        train_labels: Integer labels of the **training** split.
+        n_samples: Number of samples in the evaluated split.
+        n_classes: Number of classes.
+
+    Returns:
+        An array of shape ``(n_samples, n_classes)``.
+    """
+    prior = np.bincount(np.asarray(train_labels).astype(int), minlength=n_classes).astype(float)
+    prior /= prior.sum()
+    return np.tile(prior, (n_samples, 1))
+
+
+def summarize_evaluations(eval_root: str | Path, split: str = "val") -> pd.DataFrame:
+    """Collect every ``metrics.json`` under ``eval_root`` into one comparison table.
+
+    Args:
+        eval_root: Folder that holds one sub-folder per evaluation
+            (``<name>_<split>/metrics.json``).
+        split: Only folders ending in ``_<split>`` are included.
+
+    Returns:
+        One row per model with the headline metrics, best macro-F1 first.
+    """
+    rows = []
+    for path in sorted(Path(eval_root).glob(f"*_{split}/metrics.json")):
+        with open(path, encoding="utf-8") as f:
+            m = json.load(f)
+        rows.append(
+            {
+                "model": m.get("model", path.parent.name),
+                "macro_f1": m["macro_f1"],
+                "melanoma_recall": m["melanoma_recall"],
+                "malignant_recall": m["malignant_recall"],
+                "accuracy": m["accuracy"],
+                "balanced_accuracy": m["balanced_accuracy"],
+                "macro_auc_ovr": m["macro_auc_ovr"],
+                "n_samples": m["n_samples"],
+            }
+        )
+    columns = ["model", "macro_f1", "melanoma_recall", "malignant_recall", "accuracy",
+               "balanced_accuracy", "macro_auc_ovr", "n_samples"]
+    table = pd.DataFrame(rows, columns=columns)
+    return table.sort_values("macro_f1", ascending=False).reset_index(drop=True)
+
+
+# ---------------------------------------------------------------------------
 # Command line
 # ---------------------------------------------------------------------------
 
@@ -505,53 +567,101 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     Returns:
         The parsed arguments.
     """
-    parser = argparse.ArgumentParser(description="Evaluate a saved model on the validation or test split.")
+    parser = argparse.ArgumentParser(description="Evaluate a model or baseline on the validation or test split.")
     parser.add_argument("--config", required=True, help="Path to a YAML file in configs/.")
-    parser.add_argument("--model", default=None, help="Saved .keras model (default: models/final_model.keras).")
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument("--model", default=None, help="Saved .keras model (default: models/final_model.keras).")
+    source.add_argument("--baseline", choices=["majority"], default=None, help="Evaluate a built-in trivial baseline.")
+    source.add_argument(
+        "--probs", default=None,
+        help="A .npy file of predicted probabilities (n_samples, n_classes) in the split's row order, "
+             "e.g. saved by a baseline script.",
+    )
+    source.add_argument("--summary", action="store_true", help="Only print/save the comparison table of past evaluations.")
     parser.add_argument(
         "--split", choices=["val", "test"], default="val",
         help="Split to evaluate. 'test' is for the FINAL model and the baselines only, once.",
     )
-    parser.add_argument("--name", default=None, help="Name for titles and the output folder (default: model file name).")
+    parser.add_argument("--name", default=None, help="Name for titles and the output folder.")
     parser.add_argument("--k-errors", type=int, default=20, help="Number of confident mistakes to collect.")
     parser.add_argument("--set", nargs="*", default=[], metavar="KEY=VALUE", help="Config overrides.")
     return parser.parse_args(argv)
 
 
-def main(argv: Sequence[str] | None = None) -> None:
-    """Command-line entry point: evaluate a saved model and write the report files.
+def evaluation_splits(config: dict) -> dict[str, pd.DataFrame]:
+    """The cleaned train / val / test metadata, in the same row order as ``make_datasets``.
 
-    Outputs go to ``<experiments_dir>/eval/<name>_<split>/``.
+    ``src.data.make_datasets`` builds its splits from the *cleaned* metadata
+    (exact duplicate rows removed), so the evaluation must use the same
+    frames, or the labels and the metadata rows would not line up.
+
+    Args:
+        config: The project configuration.
+
+    Returns:
+        A dictionary with keys ``"train"``, ``"val"`` and ``"test"``.
     """
-    import keras
-
     from src import data
+
+    return {name: frame.reset_index(drop=True) for name, frame in data._prepared_splits(config).items()}
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    """Command-line entry point: evaluate one model or baseline and write the report files.
+
+    Outputs go to ``<experiments_dir>/eval/<name>_<split>/``; the comparison
+    table of every evaluation of that split is refreshed in
+    ``<experiments_dir>/eval/summary_<split>.csv``.
+    """
     from src.config import load_config, resolve_path
 
     args = parse_args(argv)
     config = load_config(args.config, args.set)
     class_names = list(config["data"]["classes"])
+    class_ids = {c: i for i, c in enumerate(class_names)}
+    eval_root = resolve_path(config["paths"]["experiments_dir"]) / "eval"
 
-    model_path = resolve_path(args.model) if args.model else resolve_path(config["paths"]["models_dir"]) / "final_model.keras"
-    name = args.name or model_path.stem
-    model = keras.models.load_model(model_path)
+    if not args.summary:
+        splits = evaluation_splits(config)
+        metadata = splits[args.split]
+        y_true = metadata["dx"].map(class_ids).to_numpy(dtype=int)
 
-    # The tf.data split must NOT be shuffled, so that its order matches the
-    # metadata rows returned by split_by_lesion (agreed with the Data Engineer).
-    dataset = data.make_datasets(config)[args.split]
-    metadata = data.split_by_lesion(data.load_metadata(config), config)[args.split].reset_index(drop=True)
+        if args.baseline == "majority":
+            name = args.name or "majority_baseline"
+            train_labels = splits["train"]["dx"].map(class_ids).to_numpy(dtype=int)
+            y_prob = majority_baseline_probs(train_labels, len(y_true), len(class_names))
+        elif args.probs:
+            name = args.name or Path(args.probs).stem
+            y_prob = np.load(resolve_path(args.probs))
+        else:
+            import keras
 
-    y_prob = model.predict(dataset, verbose=1)
-    y_true = np.concatenate([np.argmax(labels, axis=1) for _, labels in dataset])
-    if len(y_true) != len(metadata):
-        raise RuntimeError(f"Dataset has {len(y_true)} samples but metadata has {len(metadata)} rows.")
-    if not np.array_equal(y_true, metadata["dx"].map({c: i for i, c in enumerate(class_names)}).to_numpy()):
-        raise RuntimeError("Dataset order does not match the metadata order; is the split shuffled?")
+            from src import data
 
-    out_dir = resolve_path(config["paths"]["experiments_dir"]) / "eval" / f"{name}_{args.split}"
-    metrics = evaluate_predictions(y_true, y_prob, class_names, out_dir, name=name, metadata=metadata, k_errors=args.k_errors)
-    print(format_summary(metrics))
-    print(f"\nWrote evaluation files to {out_dir}")
+            model_path = resolve_path(args.model) if args.model else resolve_path(config["paths"]["models_dir"]) / "final_model.keras"
+            name = args.name or model_path.stem
+            model = keras.models.load_model(model_path, compile=False)
+            # make_datasets does not shuffle val / test, so the predictions
+            # come out in the same row order as `metadata`; checked below.
+            dataset = data.make_datasets(config)[args.split]
+            y_prob = model.predict(dataset, verbose=1)
+            dataset_labels = np.concatenate([np.argmax(labels, axis=1) for _, labels in dataset])
+            if not np.array_equal(dataset_labels, y_true):
+                raise RuntimeError("Dataset order does not match the metadata order; is the split shuffled?")
+
+        if len(y_prob) != len(y_true):
+            raise RuntimeError(f"Got {len(y_prob)} predictions but the {args.split} split has {len(y_true)} samples.")
+
+        out_dir = eval_root / f"{name}_{args.split}"
+        metrics = evaluate_predictions(y_true, y_prob, class_names, out_dir, name=name, metadata=metadata, k_errors=args.k_errors)
+        print(format_summary(metrics))
+        print(f"\nWrote evaluation files to {out_dir}")
+
+    table = summarize_evaluations(eval_root, args.split)
+    eval_root.mkdir(parents=True, exist_ok=True)
+    table.to_csv(eval_root / f"summary_{args.split}.csv", index=False)
+    print(f"\nAll evaluations on the {args.split} split:")
+    print(table.to_string(index=False, float_format=lambda v: f"{v:.4f}"))
 
 
 if __name__ == "__main__":
