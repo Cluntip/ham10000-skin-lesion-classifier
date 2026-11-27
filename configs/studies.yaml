@@ -1,0 +1,20 @@
+# One-factor-at-a-time tuning plan (spec section 3.5).
+#
+# Each study varies ONE config key (its factor) around the reference
+# configuration base.yaml; every listed file extends base.yaml and changes
+# only that key. `python -m src.experiments run --study <name>` checks this
+# rule before training. File names are relative to this folder.
+#
+# Owner: Experimentation Engineer.
+
+learning_rate:
+  factor: train.learning_rate
+  configs: [lr_1e-2.yaml, base.yaml, lr_1e-4.yaml]
+
+batch_size:
+  factor: train.batch_size
+  configs: [bs_16.yaml, base.yaml, bs_64.yaml]
+
+optimizer:
+  factor: train.optimizer
+  configs: [opt_sgd.yaml, opt_sgd_momentum.yaml, base.yaml]

@@ -1,0 +1,10 @@
+# SGD with momentum (train.momentum = 0.9 in base.yaml) instead of Adam.
+# Study: optimizer (see studies.yaml). Identical to base.yaml except for train.optimizer.
+
+extends: base.yaml
+
+experiment:
+  name: opt_sgd_momentum
+
+train:
+  optimizer: sgd_momentum
