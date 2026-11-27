@@ -111,6 +111,8 @@ The versions in `requirements.txt` match the Colab runtime `2026.10` (Python 3.1
 python data/download.py                                    # download HAM10000 into data/raw/
 python -m src.train --config configs/base.yaml             # train one configuration
 python -m src.train --config configs/base.yaml --set train.learning_rate=0.0001 --seed 7
+python -m src.evaluate --config configs/base.yaml --baseline majority           # trivial baseline, validation split
+python -m src.evaluate --config configs/base.yaml --probs logreg_val.npy        # any saved probabilities (e.g. learned baseline)
 python -m src.evaluate --config configs/base.yaml --model path/to/model.keras   # validation-set evaluation of any model
 python -m src.evaluate --config configs/final.yaml --split test                # test-set evaluation of the final model (once)
 python -m src.predict path/to/image.jpg                    # single-image prediction
