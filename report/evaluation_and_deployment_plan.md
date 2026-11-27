@@ -70,7 +70,23 @@ All of these come from `src.evaluate.compute_metrics`.
 | Checkpoint | My deliverable |
 |---|---|
 | 1 (Week 9) ✅ | This plan; `evaluate.py` (all metrics, plots, error tables) with unit tests; `predict.py` (save/load, prediction, benchmark, warm-up); the Gradio demo; the artefact contract. Everything tested on a Colab T4: all tests pass, and the demo launched with a dummy model. |
-| 2 (Week 10) | `evaluate.py` connected to Ghada's pipeline. Majority baseline measured on the validation set; logistic-regression baseline measured as soon as Ammar's probabilities exist. Comparison table in `experiments/eval/summary_val.csv`. |
+| 2 (Week 10) ✅ (learned baseline pending) | `evaluate.py` connected to Ghada's pipeline. Majority baseline measured on the validation set; logistic-regression baseline measured as soon as Ammar's probabilities exist. Comparison table in `experiments/eval/summary_val.csv`. |
 | 3 (Week 12) | Confusion matrix, ROC and failure cases for Models A, B and C on the validation set. Demo running with a temporary model. |
 | 4 (Week 13) | One test-set run for the final model and the baselines; error analysis filled in; benchmark numbers; report sections 6 and 7 drafted. |
 | Week 14 | Live demo, including a failure case. |
+
+## 7. Baseline results (validation split)
+
+Measured on 27 Nov 2026 on Colab with `notebooks/03_baseline_evaluation.ipynb`. HAM10000 has 10,015 images and 7,470 lesions. The validation split has 1,502 images and 1,121 lesions, and no image or lesion appears in two splits (checked by Ghada's audit). The test split was not used.
+
+| Model | Macro-F1 | Melanoma recall | Malignant recall | Accuracy | Balanced acc. | Macro AUC |
+|---|---:|---:|---:|---:|---:|---:|
+| Majority class (always `nv`) | 0.115 | 0.000 | 0.000 | 0.670 | 0.143 | 0.500 |
+| Logistic regression (learned baseline) | waiting for Ammar's `experiments/logreg_baseline_val.npy` | | | | | |
+
+**What this shows:**
+- Predicting `nv` for every image already gives **67 % accuracy**, but it misses **every** melanoma and every malignant lesion, and its macro-F1 is only 0.115. This is the evidence for choosing macro-F1 and melanoma recall over accuracy. Every neural model must beat **0.115 macro-F1** and **0 % melanoma recall**.
+- A balanced accuracy of 0.143 is exactly 1/7, and an AUC of 0.5 is chance level. Both are what a model that never looks at the image should get, which is a sanity check that `evaluate.py` is correct.
+- The validation and test splits have the same class counts (1,006 `nv`, 167 `mel`, 165 `bkl`, 77 `bcc`, 49 `akiec`, 21 `vasc`, 17 `df`). Rare classes have few validation images (`df` = 17, `vasc` = 21), so their per-class recall will be noisy. Report it with that caveat.
+
+Reproduce with `python -m src.evaluate --config configs/base.yaml --baseline majority`.
