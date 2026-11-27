@@ -1,0 +1,10 @@
+# Plain SGD (no momentum) instead of the reference Adam.
+# Study: optimizer (see studies.yaml). Identical to base.yaml except for train.optimizer.
+
+extends: base.yaml
+
+experiment:
+  name: opt_sgd
+
+train:
+  optimizer: sgd

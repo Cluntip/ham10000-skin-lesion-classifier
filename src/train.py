@@ -42,6 +42,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Override config values, e.g. --set train.learning_rate=0.0001",
     )
     parser.add_argument("--seed", type=int, default=None, help="Override experiment.seed.")
+    parser.add_argument("--author", default=None, help="Who runs it (default: $EXPERIMENT_AUTHOR or git user).")
+    parser.add_argument("--notes", default="", help="Remark stored in the experiment log.")
+    parser.add_argument("--no-log", action="store_true", help="Do not record this run in experiments/.")
     return parser.parse_args(argv)
 
 
@@ -120,12 +123,23 @@ def train(config: dict) -> tuple[keras.Model, keras.callbacks.History]:
 
 
 def main(argv: Sequence[str] | None = None) -> None:
-    """Command-line entry point: load the config and train."""
+    """Command-line entry point: load the config, train, and log the run.
+
+    Every run is recorded in ``experiments/`` (run record, learning curves and
+    the experiment table) through :func:`src.experiments.run_one`, unless
+    ``--no-log`` is given.
+    """
     args = parse_args(argv)
-    config = load_config(args.config, args.set)
-    if args.seed is not None:
-        config["experiment"]["seed"] = args.seed
-    train(config)
+    if args.no_log:
+        config = load_config(args.config, args.set)
+        if args.seed is not None:
+            config["experiment"]["seed"] = args.seed
+        train(config)
+        return
+
+    from src.experiments import run_one
+
+    run_one(args.config, overrides=args.set, seed=args.seed, author=args.author, notes=args.notes, train_fn=train)
 
 
 if __name__ == "__main__":

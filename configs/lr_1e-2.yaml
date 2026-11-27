@@ -1,0 +1,10 @@
+# Learning rate 10x higher than the reference (0.001).
+# Study: learning_rate (see studies.yaml). Identical to base.yaml except for train.learning_rate.
+
+extends: base.yaml
+
+experiment:
+  name: lr_1e-2
+
+train:
+  learning_rate: 0.01

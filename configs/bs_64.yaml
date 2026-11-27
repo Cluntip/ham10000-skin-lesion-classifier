@@ -1,0 +1,10 @@
+# Batch size double the reference (32).
+# Study: batch_size (see studies.yaml). Identical to base.yaml except for train.batch_size.
+
+extends: base.yaml
+
+experiment:
+  name: bs_64
+
+train:
+  batch_size: 64
